@@ -66,7 +66,7 @@
         mode: '0755'
 
 - name: Concatenate and extract multiple tar files
-  hosts: all
+  hosts: server
   become: yes
   vars:
     staging_dir: /data/rhel/staging
@@ -93,13 +93,17 @@
         remote_src: yes
       loop: "{{ tar_find_result.files }}"
 
+    - name: Show found tar files
+      debug:
+        var: tar_find_result.files | map(attribute='path') | list
+
     - name: Enable and start Apache
       systemd:
         name: httpd
         enabled: true
         state: started
 
-    # TODO: Add local repo files contents
+    # TODO: Add local repo files contents. Maybe use jinja template?
     - name: Add local repo file
       copy:
         dest: /etc/yum.repos.d/local.repo
