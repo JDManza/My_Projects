@@ -1,0 +1,111 @@
+---
+# TODO: Snapshots of all hosts
+- name: Unsubscribe clients from RHEL Satellite
+  hosts: clients
+  become: true
+  tasks:
+    - name: Unregister system from Satellite
+      command: subscription-manager unregister
+      ignore_errors: true
+
+    - name: Remove subscription-manager certificates
+      file:
+        path: /etc/pki/consumer
+        state: absent
+
+    - name: Clean local subscription data
+      command: subscription-manager clean
+      ignore_errors: true
+
+- name: Remove Satellite from server
+  hosts: server
+  become: true
+  tasks:
+    - name: Stop satellite services
+      command: satellite-maintain service stop
+      when: "'satellite-maintain' in ansible_facts.packages"
+
+    - name: Uninstall Satellite packages
+      yum:
+        name: katello,foreman\*,pulp\*,candlepin\*
+        state: absent
+      ignore_errors: true
+
+    - name: Remove Satellite data and configs
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /etc/foreman
+        - /etc/pulp
+        - /etc/candlepin
+        - /var/lib/pulp
+        - /var/lib/foreman
+        - /var/lib/katello
+        - /etc/puppetlabs
+        - /opt/theforeman
+        - /var/log/foreman
+        - /var/log/katello
+
+- name: Create local YUM repo on server
+  hosts: server
+  become: true
+  vars:
+    local_repo_path: /etc/yum.repos.d/local.repo
+  tasks:
+    - name: Ensure required packages are installed
+      yum:
+        name:
+          - httpd
+        state: present
+
+    - name: Create local repo directories
+      file:
+        path: "{{ local_repo_path }}"
+        state: directory
+        mode: '0755'
+
+- name: Concatenate and extract multiple tar files
+  hosts: all
+  become: yes
+  vars:
+    staging_dir: /data/rhel/staging
+    target_dir: /data/rhel/repo
+
+  tasks:
+    - name: Ensure target directory exists
+      file:
+        path: "{{ target_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Find all .tar files in the staging directory
+      find:
+        paths: "{{ staging_dir }}"
+        patterns: "*.tar"
+        file_type: file
+      register: tar_find_result
+
+    - name: Extract each tar file into the target directory
+      ansible.builtin.unarchive:
+        src: "{{ item.path }}"
+        dest: "{{ target_dir }}"
+        remote_src: yes
+      loop: "{{ tar_find_result.files }}"
+
+    - name: Enable and start Apache
+      systemd:
+        name: httpd
+        enabled: true
+        state: started
+
+    # TODO: Add local repo files contents
+    - name: Add local repo file
+      copy:
+        dest: /etc/yum.repos.d/local.repo
+        content: |
+          [local-rhel8]
+          name=Local RHEL8 Repo
+          baseurl=http://localhost/localrepo
+          enabled=1
+          gpgcheck=0
