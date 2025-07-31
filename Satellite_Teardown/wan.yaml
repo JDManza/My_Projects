@@ -103,6 +103,27 @@
         enabled: true
         state: started
 
+- name: Allow Apache to serve repo folder via SELinux
+  hosts: server
+  become: true
+  collections: 
+    - community.general
+  
+  tasks:
+    - name: Ensure semanage dependencies are installed
+      package:
+        name: policycoreutils-python-utils
+        state: present
+
+    - name: Add persistent SELinux context for Apache-accessible repo
+      community.general.sefcontext:
+        target: "/data/repo_rhel(/.*)?"
+        setype: httpd_sys_content_t
+        state: present
+
+    - name: Apply SELinux context
+      command: restorecon -Rv /data1/repo_rhel
+
     # TODO: Add local repo files contents. Maybe use jinja template?
     - name: Add local repo file
       copy:
