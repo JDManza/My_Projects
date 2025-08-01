@@ -18,9 +18,9 @@ cp "$MPM_CONF" "$BACKUP_DIR"
 sed -i 's/^\(LoadModule mpm_.*_module.*\)/#\1/' "$MPM_CONF"
 
 # Uncomment only prefork (you can change this to worker or event)
-sed -i 's/^#\(LoadModule mpm_prefork_module.*\)/\1/' "$MPM_CONF"
+sed -i 's/^#\(LoadModule mpm_event_module.*\)/\1/' "$MPM_CONF"
 
-echo "[INFO] Ensured only mpm_prefork_module is enabled."
+echo "[INFO] Ensured only mpm_event_module is enabled."
 
 # Step 2: Find Satellite-related Apache configs
 echo "[INFO] Scanning for Satellite-related Apache configuration files..."
