@@ -11,6 +11,22 @@ if [[ -z "$IFACE" || -z "$STATIC_IP" ]]; then
   exit 1
 fi
 
+# Validate IP/CIDR Schema from input
+if ! [[ "$STATIC_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$ ]]; then
+    echo "[ERROR] Static IP must be in valid CIDR format (e.g., 192.168.1.100/24)"
+    exit 1
+fi
+
+# Validate that each octet <= 255
+IFS=/ read IP CIDR <<< "$STATIC_IP"
+IFS=. read -r o1 o2 o3 o4 <<< "$IP"
+for octet in "$o1" "$o2" "$o3" "$o4"; do
+    if (( octet < 0 || octet > 255)); then
+        echo "[ERROR] Invalid IP address: octet $octet out of range"
+        exit 1
+    fi
+done
+
 # Check if interface exists
 if ! ip link show "$IFACE" &>/dev/null; then
   echo "Error: Interface '$IFACE' does not exist."
