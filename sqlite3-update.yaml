@@ -1,0 +1,78 @@
+---
+- name: Install SQLite 3.50.2 from source
+  hosts: all
+  become: yes
+  vars:
+    sqlite_version: "3500400"
+    sqlite_prefix: "/opt/sqlite3.50.2"
+    sqlite_archive: "sqlite-autoconf-{{ sqlite_version }}.tar.gz"
+    sqlite_dir: "sqlite-autoconf-{{ sqlite_version }}"
+
+  tasks:        
+    - name: Install required packages # Validates 
+      dnf:
+        name:
+          - gcc
+          - make
+          - wget
+          - tar
+          - libtool
+          - autoconf
+          - automake
+        state: present
+
+    - name: Create build directory
+      file:
+        path: /usr/local/src/sqlite
+        state: directory
+        mode: '0755'
+        
+    - name: Transfer sqlite3 tar to hosts
+      ansible.builtin.copy:
+        src: /path/to/local/{{ sqlite_archive}} # Absolute path on the Ansible control node
+        dest: /etc/remote/{{ sqlite_archive}}   # Figure out best staging path for tar.gz bundle
+        owner: root
+        group: root                  
+        mode: '0644'
+        backup: yes
+
+    - name: Extract SQLite source
+      unarchive:
+        src: "/dir/to/src/tar/{{ sqlite_archive }}"
+        dest: "/usr/local/src/sqlite"
+        remote_src: yes
+
+    - name: Configure SQLite build
+      command: ./configure --prefix={{ sqlite_prefix }}
+      args:
+        chdir: "/usr/local/src/sqlite/{{ sqlite_dir }}"
+
+    - name: Compile SQLite
+      command: make
+      args:
+        chdir: "/usr/local/src/sqlite/{{ sqlite_dir }}"
+
+    - name: Install SQLite
+      command: make install
+      args:
+        chdir: "/usr/local/src/sqlite/{{ sqlite_dir }}"
+
+    # - name: Add SQLite to system PATH
+    #   lineinfile:
+    #     path: /etc/profile.d/sqlite.sh
+    #     line: 'export PATH={{ sqlite_prefix }}/bin:$PATH'
+    #     create: yes
+    #     mode: '0755'
+
+    - name: Source new PATH for current session
+      shell: source /etc/profile.d/sqlite.sh
+      args:
+        executable: /bin/bash
+
+    - name: Verify SQLite version
+      command: "{{ sqlite_prefix }}/bin/sqlite3 --version"
+      register: sqlite_version_output
+
+    - name: Show installed SQLite version
+      debug:
+        msg: "Installed SQLite version: {{ sqlite_version_output.stdout }}"
