@@ -4,12 +4,12 @@
   become: yes
   vars:
     sqlite_version: "3500400"
-    sqlite_prefix: "/opt/sqlite3.50.2"
+    sqlite_prefix: "/usr"
     sqlite_archive: "sqlite-autoconf-{{ sqlite_version }}.tar.gz"
     sqlite_dir: "sqlite-autoconf-{{ sqlite_version }}"
 
   tasks:        
-    - name: Install required packages # Validates 
+    - name: Install required packages # Validates that the necessary deps are installed
       dnf:
         name:
           - gcc
@@ -30,7 +30,7 @@
     - name: Transfer sqlite3 tar to hosts
       ansible.builtin.copy:
         src: /path/to/local/{{ sqlite_archive}} # Absolute path on the Ansible control node
-        dest: /etc/remote/{{ sqlite_archive}}   # Figure out best staging path for tar.gz bundle
+        dest: /home/sudoer{{ sqlite_archive}}   # Figure out best staging path for tar.gz bundle
         owner: root
         group: root                  
         mode: '0644'
@@ -38,7 +38,7 @@
 
     - name: Extract SQLite source
       unarchive:
-        src: "/dir/to/src/tar/{{ sqlite_archive }}"
+        src: "/home/sudoer/{{ sqlite_archive }}"
         dest: "/usr/local/src/sqlite"
         remote_src: yes
 
@@ -55,14 +55,14 @@
     - name: Install SQLite
       command: make install
       args:
-        chdir: "/usr/local/src/sqlite/{{ sqlite_dir }}"
+        chdir: "/usr/bin/sqlite/{{ sqlite_dir }}"
 
-    # - name: Add SQLite to system PATH
-    #   lineinfile:
-    #     path: /etc/profile.d/sqlite.sh
-    #     line: 'export PATH={{ sqlite_prefix }}/bin:$PATH'
-    #     create: yes
-    #     mode: '0755'
+    - name: Add SQLite to system PATH
+      lineinfile:
+        path: /etc/profile.d/sqlite.sh
+        line: 'export PATH={{ sqlite_prefix }}/bin:$PATH'
+        create: yes
+        mode: '0755'
 
     - name: Source new PATH for current session
       shell: source /etc/profile.d/sqlite.sh
