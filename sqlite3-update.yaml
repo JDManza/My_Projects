@@ -5,8 +5,8 @@
   vars:
     sqlite_version: "3500400"
     sqlite_prefix: "/usr"
-    sqlite_archive: "sqlite-autoconf-{{ sqlite_version }}.tar.gz"
     sqlite_dir: "sqlite-autoconf-{{ sqlite_version }}"
+    sqlite_archive: "{{ sqlite_dir }}.tar.gz"
 
   tasks:        
     - name: Install required packages # Validates that the necessary deps are installed
