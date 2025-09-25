@@ -1,0 +1,117 @@
+---
+# save_docker_images.yml
+# Usage:
+#   ansible-playbook -i <inventory> save_docker_images.yml \
+#     -e backup_dir=/var/backups/docker -e export_containers=true
+#
+# Requires: Docker CLI available on target(s).
+
+- name: Save all Docker images (incl. untagged/dangling) to a tar
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    backup_dir: /var/backups/docker
+    tar_basename: "docker-images-{{ lookup('pipe','date +%Y%m%d-%H%M%S') }}.tar"
+    export_containers: false  # set true to also export each container filesystem
+
+  tasks:
+    - name: Ensure docker CLI is present
+    # Using command so we fail clearly if docker is missing.
+      ansible.builtin.command: which docker
+      register: docker_cli
+      changed_when: false
+
+    - name: Create backup directory
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: "0750"
+
+    - name: Get ALL image IDs (includes dangling/untagged)
+      ansible.builtin.shell: |
+        set -o pipefail
+        docker images -a --quiet --no-trunc | sort -u
+      args:
+        executable: /bin/bash
+      register: images_q
+      changed_when: false
+
+    - name: Get container IDs (running and stopped)
+      ansible.builtin.shell: |
+        set -o pipefail
+        docker ps -a --quiet --no-trunc | sort -u
+      args:
+        executable: /bin/bash
+      register: containers_q
+      changed_when: false
+
+    - name: Resolve image IDs used by any container
+      when: containers_q.stdout | length > 0
+      ansible.builtin.shell: |
+        set -o pipefail
+        # For each container, print its backing Image ID (sha256:...)
+        docker inspect {{ (containers_q.stdout_lines | map('quote') | join(' ')) }} \
+          --format '{{"{{"}} .Image {{"}}"}}' | sort -u
+      args:
+        executable: /bin/bash
+      register: container_image_ids
+      changed_when: false
+
+    - name: Combine & de-duplicate image IDs
+      ansible.builtin.set_fact:
+        all_image_ids: >-
+          {{
+            (images_q.stdout_lines | default([]))
+            + (container_image_ids.stdout_lines | default([]))
+          | select('string') | map('trim') | reject('equalto','') | list | unique
+          }}
+
+    - name: Fail clearly if no images were found
+      ansible.builtin.fail:
+        msg: >-
+          No Docker images were found on this host. If you expected some,
+          check that Docker is running and the user has permission to access the Docker daemon.
+      when: all_image_ids | length == 0
+
+    - name: Save ALL images into a single tar archive
+      ansible.builtin.shell: |
+        set -o pipefail
+        docker save -o "{{ backup_dir }}/{{ tar_basename }}" {{ all_image_ids | join(' ') }}
+      args:
+        executable: /bin/bash
+      register: save_result
+      changed_when: true
+
+    - name: Show archive details
+      ansible.builtin.stat:
+        path: "{{ backup_dir }}/{{ tar_basename }}"
+      register: tar_stat
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg:
+          - "Saved {{ all_image_ids | length }} images."
+          - "Archive: {{ backup_dir }}/{{ tar_basename }}"
+          - "Size (bytes): {{ tar_stat.stat.size | default('unknown') }}"
+
+    # ---------------- OPTIONAL: export container filesystems ----------------
+    # - name: Create containers export directory
+    #   when: export_containers | bool
+    #   ansible.builtin.file:
+    #     path: "{{ backup_dir }}/containers"
+    #     state: directory
+    #     mode: "0750"
+
+    # - name: Export each container filesystem to its own tar (docker export)
+    #   when: export_containers | bool and (containers_q.stdout_lines | length > 0)
+    #   ansible.builtin.shell: |
+    #     set -o pipefail
+    #     cname="$(docker inspect --format='{{"{{"}} .Name {{"}}"}}' {{ item }} | sed 's#^/##')"
+    #     docker export "{{ item }}" > "{{ backup_dir }}/containers/${cname:-{{ item }}}.tar"
+    #   args:
+    #     executable: /bin/bash
+    #   loop: "{{ containers_q.stdout_lines }}"
+    #   loop_control:
+    #     label: "{{ item }}"
