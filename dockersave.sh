@@ -6,6 +6,7 @@
 # Example:
 #   ./save_docker_images.sh /var/backups/docker --export-containers
 #
+# Run "# tar -tf /tmp/docker-backup-test/docker-images-*.tar | grep manifest.json" to validate
 
 set -euo pipefail
 
@@ -35,7 +36,7 @@ else
     CONTAINER_IMAGE_IDS=()
 fi
 
-# Merge and dedupe all image IDs
+# Merge and dedupe all image IDs, make sure you don’t miss any images and don’t waste space saving duplicates.
 ALL_IMAGE_IDS=($(printf "%s\n" "${IMAGE_IDS[@]}" "${CONTAINER_IMAGE_IDS[@]}" | sort -u))
 
 if [[ ${#ALL_IMAGE_IDS[@]} -eq 0 ]]; then
@@ -48,3 +49,5 @@ docker save -o "$BACKUP_DIR/$TAR_BASENAME" "${ALL_IMAGE_IDS[@]}"
 
 echo "[+] Images saved: $BACKUP_DIR/$TAR_BASENAME"
 ls -lh "$BACKUP_DIR/$TAR_BASENAME"
+echo "[*] Done."
+
