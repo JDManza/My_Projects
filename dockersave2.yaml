@@ -1,9 +1,9 @@
 ---
-- name: Stop running containers and save latest two image tags per repo (no collections)
+- name: Stop running containers and save latest two image tags per repo (by tag, not timestamp)
   hosts: all
   gather_facts: false
   vars:
-    backup_dir: /var/backups/docker_images   # change if you like
+    backup_dir: /var/backups/docker_images
 
   tasks:
     - name: Ensure backup directory exists
@@ -27,61 +27,22 @@
       register: images_raw
       changed_when: false
 
-    - name: Build list of repo/tag (skip <none>)
+    - name: Build repo/tag dicts (skip <none>)
       ansible.builtin.set_fact:
-        images_list: >-
-          {{
-            (images_raw.stdout_lines | default([]))
-            | reject('search', '^<none> ')
-            | reject('search', ' <none>$')
-            | map('split', ' ')
-            | map('list')
-            | map('community.general.dict_kv', 'repo', 'tag')    # fallback provided below if you don't have community.general
-            | list
-          }}
-      vars:
-        # Safe fallback for dict_kv without community.general:
-        # (Uncomment these two lines and replace the map line above if you prefer no helper at all.)
-        # images_list_tmp: "{{ (images_raw.stdout_lines | default([])) | reject('search', '^<none> ') | reject('search', ' <none>$') | list }}"
-        # images_list: "{{ images_list_tmp | map('split',' ') | list | map('last') }}"
-      # NOTE: If you truly want *zero* external filters, use the next task instead and remove this one.
-
-    # Minimal, zero-extras way to build [{'repo':..., 'tag':...}] if you want to avoid ANY external filters:
-    - name: Build repo/tag dicts without any extra collections
-      ansible.builtin.set_fact:
-        images_list: "{{ (images_list | default([])) + [ {'repo': (item.split(' ')[0]), 'tag': (item.split(' ')[1]) } ] }}"
+        images_list: "{{ (images_list | default([])) + [ {'repo': item.split(' ')[0], 'tag': item.split(' ')[1]} ] }}"
       loop: "{{ images_raw.stdout_lines | default([]) }}"
       when: "'<none>' not in item"
 
-    - name: Inspect created time for each repo:tag
-      ansible.builtin.command: >
-        docker image inspect -f {{'{{.Created}}'}} {{ item.repo }}:{{ item.tag }}
-      register: inspected
-      loop: "{{ images_list }}"
-      changed_when: false
-      failed_when: inspected is failed and (inspected.results | selectattr('rc','ne',0) | list | length) == (images_list | length)
-
-    - name: Merge repo/tag with created timestamp
-      ansible.builtin.set_fact:
-        images_with_created: "{{ (images_with_created | default([])) + [
-          {
-            'repo': item.0.repo,
-            'tag':  item.0.tag,
-            'created': (item.1.stdout | to_datetime).strftime('%s') | int
-          }
-        ] }}"
-      loop: "{{ images_list | zip(inspected.results) | list }}"
-
-    - name: Pick two most recent tags per repo
+    - name: Group by repo and keep top 2 tags (lexicographic sort)
       ansible.builtin.set_fact:
         images_to_save: >-
           {{
-            (images_with_created | default([]))
+            images_list
             | groupby('repo')
-            | map('last')                         # list per repo
-            | map('sort', attribute='created')    # oldest->newest
-            | map('reverse')                      # newest->oldest
-            | map('slice', 2)                     # top 2
+            | map('last')
+            | map('sort', attribute='tag')   # simple string sort
+            | map('reverse')
+            | map('slice', 2)
             | list
             | flatten
           }}
