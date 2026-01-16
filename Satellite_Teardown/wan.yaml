@@ -1,5 +1,4 @@
 ---
-
 # TODO: Snapshots of all hosts
 - name: Unsubscribe clients from RHEL Satellite
   hosts: clients
@@ -67,7 +66,7 @@
         mode: '0755'
 
 - name: Concatenate and extract multiple tar files
-  hosts: all
+  hosts: server
   become: yes
   vars:
     staging_dir: /data/rhel/staging
@@ -94,13 +93,38 @@
         remote_src: yes
       loop: "{{ tar_find_result.files }}"
 
+    - name: Show found tar files
+      debug:
+        var: tar_find_result.files | map(attribute='path') | list
+
     - name: Enable and start Apache
       systemd:
         name: httpd
         enabled: true
         state: started
 
-    # TODO: Add local repo files contents
+- name: Allow Apache to serve repo folder via SELinux
+  hosts: server
+  become: true
+  collections: 
+    - community.general
+  
+  tasks:
+    - name: Ensure semanage dependencies are installed
+      package:
+        name: policycoreutils-python-utils
+        state: present
+
+    - name: Add persistent SELinux context for Apache-accessible repo
+      community.general.sefcontext:
+        target: "/data/repo_rhel(/.*)?"
+        setype: httpd_sys_content_t
+        state: present
+
+    - name: Apply SELinux context
+      command: restorecon -Rv /data1/repo_rhel
+
+    # TODO: Add local repo files contents. Maybe use jinja template?
     - name: Add local repo file
       copy:
         dest: /etc/yum.repos.d/local.repo
